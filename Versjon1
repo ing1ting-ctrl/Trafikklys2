@@ -1,0 +1,366 @@
+<div id="board" class="board">
+  <div class="toolbar">
+    <label class="btn">
+      Bakgrunnsbilde
+      <input id="bgUpload" type="file" accept="image/*" hidden>
+    </label>
+
+    <button class="btn" id="addText">+ Tekst</button>
+    <button class="btn" id="addLight">+ Trafikklys</button>
+  </div>
+
+  <div id="canvas" class="canvas" aria-label="Tavle"></div>
+</div>
+
+<style>
+  .board{
+    width:100%;
+    height:min(92vh, 980px);
+    min-height:520px;
+    border-radius:16px;
+    overflow:hidden;
+    background:#f3f4f6;
+    border:1px solid rgba(0,0,0,.08);
+    position:relative;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  .toolbar{
+    height:56px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px;
+    background: rgba(255,255,255,.85);
+    border-bottom:1px solid rgba(0,0,0,.08);
+  }
+  .btn{
+    border:1px solid rgba(0,0,0,.15);
+    background:#fff;
+    padding:8px 10px;
+    border-radius: 12px;
+    cursor:pointer;
+    font-size:14px;
+    user-select:none;
+    touch-action: manipulation;
+    white-space: nowrap;
+  }
+  .btn:hover{ background:#fafafa; }
+
+  .canvas{
+    position:absolute;
+    left:0; right:0;
+    top:56px; bottom:0;
+    background-size: cover;
+    background-position: center;
+    touch-action:none;
+  }
+
+  /* Felles widget */
+  .widget{
+    position:absolute;
+    left: 30px;
+    top: 30px;
+    transform: scale(1);
+    transform-origin: top left;
+    user-select:none;
+    touch-action:none;
+  }
+
+  .chrome{
+    background: rgba(255,255,255,.78);
+    border:1px solid rgba(0,0,0,.10);
+    border-radius: 14px;
+    box-shadow: 0 10px 25px rgba(0,0,0,.12);
+    overflow:hidden;
+  }
+
+  .w-top{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    background: rgba(255,255,255,.70);
+    border-bottom:1px solid rgba(0,0,0,.08);
+  }
+  .grip{ cursor:grab; padding:2px 6px; border-radius:10px; }
+  .grip:active{ cursor:grabbing; }
+  .w-title{ font-size:13px; opacity:.85; }
+  .w-actions{ margin-left:auto; display:flex; gap:8px; }
+  .iconbtn{
+    border:1px solid rgba(0,0,0,.12);
+    background:#fff;
+    width:28px;
+    height:28px;
+    border-radius:10px;
+    cursor:pointer;
+    touch-action:manipulation;
+  }
+
+  .resize{
+    position:absolute;
+    right:6px;
+    bottom:6px;
+    width:18px;
+    height:18px;
+    border-radius: 6px;
+    cursor:nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.35) 50%);
+    touch-action:none;
+  }
+
+  /* Tekst-widget */
+  .text-body{
+    padding:10px;
+    width: 240px;
+    min-height: 120px;
+  }
+  .text-area{
+    width:100%;
+    min-height: 100px;
+    resize:none;
+    border:1px dashed rgba(0,0,0,.18);
+    border-radius: 10px;
+    padding:8px;
+    background: rgba(255,255,255,.9);
+    font-size:14px;
+    outline:none;
+  }
+
+  /* Trafikklys-widget */
+  .light-body{
+    padding:10px 10px 12px;
+    width: 90px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    background:#1f1f1f;
+  }
+  .lamp{
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.12);
+    cursor:pointer;
+    position:relative;
+    touch-action: manipulation;
+  }
+  .lamp::after{
+    content:"";
+    position:absolute;
+    top:8px; left:10px; right:10px;
+    height:18px;
+    border-radius:50%;
+    background: rgba(255,255,255,.12);
+    pointer-events:none;
+  }
+
+  .red   { background: radial-gradient(circle, #3a1b1b, #1e0c0c 70%); }
+  .amber { background: radial-gradient(circle, #3a2a12, #1f1609 70%); }
+  .green { background: radial-gradient(circle, #14331f, #0b1f13 70%); }
+
+  .on.red{
+    background: radial-gradient(circle, #ff8b8b, #ff1a1a 55%, #b30000);
+    box-shadow: 0 0 14px rgba(255,0,0,.7), 0 0 36px rgba(255,0,0,.5);
+  }
+  .on.amber{
+    background: radial-gradient(circle, #ffe3a8, #ff9f0a 55%, #c46a00);
+    box-shadow: 0 0 14px rgba(255,159,10,.7), 0 0 36px rgba(255,159,10,.5);
+  }
+  .on.green{
+    background: radial-gradient(circle, #baffd1, #17c964 55%, #0c7a3a);
+    box-shadow: 0 0 14px rgba(23,201,100,.7), 0 0 36px rgba(23,201,100,.5);
+  }
+
+  .picker{
+    width:34px;
+    height:34px;
+    border:none;
+    background:none;
+    cursor:pointer;
+  }
+  .picker::-webkit-color-swatch{
+    border-radius: 50%;
+    border:2px solid rgba(255,255,255,.6);
+  }
+  .picker::-webkit-color-swatch-wrapper{ padding:0; }
+</style>
+
+<script>
+(() => {
+  const canvas = document.getElementById("canvas");
+  const bgUpload = document.getElementById("bgUpload");
+
+  const clamp = (v,min,max) => Math.max(min, Math.min(max, v));
+  const uid = () => "w_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+
+  function wireWidget(widget){
+    const grip = widget.querySelector(".grip");
+    const resizer = widget.querySelector(".resize");
+    const del = widget.querySelector('[data-act="del"]');
+
+    del.addEventListener("click", () => widget.remove());
+
+    // drag
+    let dragging=false, sx=0, sy=0, ox=0, oy=0;
+
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      dragging=true;
+      grip.setPointerCapture(e.pointerId);
+
+      const wRect = widget.getBoundingClientRect();
+      const cRect = canvas.getBoundingClientRect();
+
+      sx = e.clientX; sy = e.clientY;
+      ox = wRect.left - cRect.left;
+      oy = wRect.top  - cRect.top;
+    }, {passive:false});
+
+    grip.addEventListener("pointermove", (e) => {
+      if(!dragging) return;
+
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+
+      const cRect = canvas.getBoundingClientRect();
+      const maxLeft = cRect.width  - widget.offsetWidth;
+      const maxTop  = cRect.height - widget.offsetHeight;
+
+      widget.style.left = clamp(ox + dx, 0, maxLeft) + "px";
+      widget.style.top  = clamp(oy + dy, 0, maxTop) + "px";
+    });
+
+    grip.addEventListener("pointerup", (e) => {
+      dragging=false;
+      try{ grip.releasePointerCapture(e.pointerId); }catch(_){}
+    });
+
+    // resize (proporsjonalt via scale)
+    let resizing=false, rsx=0, rsy=0, startScale=1;
+
+    resizer.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      resizing=true;
+      resizer.setPointerCapture(e.pointerId);
+
+      rsx = e.clientX; rsy = e.clientY;
+      startScale = parseFloat(widget.dataset.scale || "1");
+    }, {passive:false});
+
+    resizer.addEventListener("pointermove", (e) => {
+      if(!resizing) return;
+
+      const dx = e.clientX - rsx;
+      const dy = e.clientY - rsy;
+
+      const delta = (dx + dy) / 300;
+      const next = clamp(startScale + delta, 0.5, 2.2);
+
+      widget.dataset.scale = String(next);
+      widget.style.transform = `scale(${next})`;
+    });
+
+    resizer.addEventListener("pointerup", (e) => {
+      resizing=false;
+      try{ resizer.releasePointerCapture(e.pointerId); }catch(_){}
+    });
+
+    // trafikklys logikk, hvis det er et trafikklys
+    if(widget.dataset.type === "light"){
+      const lamps = widget.querySelectorAll(".lamp");
+      lamps.forEach(l => {
+        l.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          lamps.forEach(x => x.classList.remove("on"));
+          l.classList.add("on");
+        }, {passive:false});
+      });
+
+      const body = widget.querySelector(".light-body");
+      const picker = widget.querySelector(".picker");
+      picker.addEventListener("input", (e) => {
+        body.style.background = e.target.value;
+      });
+    }
+  }
+
+  function createShell(type, title){
+    const el = document.createElement("div");
+    el.className = "widget";
+    el.dataset.id = uid();
+    el.dataset.type = type;
+    el.dataset.scale = "1";
+    el.style.left = "30px";
+    el.style.top = "30px";
+    el.style.transform = "scale(1)";
+    el.innerHTML = `
+      <div class="chrome">
+        <div class="w-top">
+          <div class="grip" title="Dra">⋮⋮</div>
+          <div class="w-title">${title}</div>
+          <div class="w-actions">
+            <button class="iconbtn" data-act="del" title="Slett">✕</button>
+          </div>
+        </div>
+        <div class="w-content"></div>
+      </div>
+      <div class="resize" title="Endre størrelse"></div>
+    `;
+    return el;
+  }
+
+  function createTextWidget(){
+    const el = createShell("text", "Tekst");
+    el.querySelector(".w-content").innerHTML = `
+      <div class="text-body">
+        <textarea class="text-area" placeholder="Skriv her..."></textarea>
+      </div>
+    `;
+    return el;
+  }
+
+  function createLightWidget(){
+    const el = createShell("light", "Trafikklys");
+    el.querySelector(".w-content").innerHTML = `
+      <div class="light-body">
+        <div class="lamp red on" data-color="red"></div>
+        <div class="lamp amber" data-color="amber"></div>
+        <div class="lamp green" data-color="green"></div>
+        <input class="picker" type="color" value="#1f1f1f" title="Endre boksfarge">
+      </div>
+    `;
+    return el;
+  }
+
+  // Toolbar
+  document.getElementById("addText").addEventListener("click", () => {
+    const w = createTextWidget();
+    canvas.appendChild(w);
+    wireWidget(w);
+  });
+
+  document.getElementById("addLight").addEventListener("click", () => {
+    const w = createLightWidget();
+    canvas.appendChild(w);
+    wireWidget(w);
+  });
+
+  // Bakgrunnsbilde
+  bgUpload.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      canvas.style.backgroundImage = `url('${reader.result}')`;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  });
+
+  // Start med ett trafikklys
+  const start = createLightWidget();
+  canvas.appendChild(start);
+  wireWidget(start);
+})();
+</script>
